@@ -1,0 +1,158 @@
+    # %%
+    import pandas as pd
+    import numpy as np
+    import random
+    from datetime import datetime, timedelta
+    from tqdm import tqdm
+
+    # ----------------------------
+    # CONFIGURATION
+    # ----------------------------
+    np.random.seed(42)
+    random.seed(42)
+
+    regions = {
+        "Glasgow": ["Lidl Glasgow Central", "Lidl Partick", "Lidl Shawlands", "Lidl Govan"],
+        "Edinburgh": ["Lidl Leith", "Lidl Corstorphine", "Lidl Morningside", "Lidl Granton"],
+        "Aberdeen": ["Lidl Bridge of Don", "Lidl Torry", "Lidl Dyce", "Lidl Cults"],
+        "Inverness": ["Lidl Inshes", "Lidl Westhill", "Lidl Balloch", "Lidl Merkinch"]
+    }
+
+    # ----------------------------
+    # PRODUCT CATALOG (Lidl UK style)
+    # ----------------------------
+    categories = {
+        "Bakery": [
+            "White Bloomer", "Seeded Loaf", "Butter Croissant", "Pain au Chocolat", "Tiger Roll",
+            "Brioche Buns", "Wholemeal Bread", "Ciabatta", "Bagel", "Belgian Waffle",
+            "Chocolate Muffin", "All Butter Scone", "Cheese Twist", "Sourdough Loaf", "Mini Pancakes",
+            "Jam Donut", "Cinnamon Swirl", "Garlic Baguette", "Crumpets", "Pitta Bread"
+        ],
+        "Dairy": [
+            "British Semi Skimmed Milk 2L", "Mature Cheddar", "Salted Butter", "Greek Style Yogurt",
+            "Free Range Eggs 6pk", "Soft Cheese", "Double Cream", "Skyr Yogurt", "Cheese Slices",
+            "Mozzarella", "Natural Yogurt", "Lactose Free Milk", "Cottage Cheese", "Cheddar Slices",
+            "Unsalted Butter", "Whipping Cream", "Vegan Spread", "Goat’s Cheese", "Crème Fraîche", "Halloumi"
+        ],
+        "Fruit & Veg": [
+            "Bananas", "Apples", "Carrots", "Baby Potatoes", "Cherry Tomatoes", "Onions", "Mixed Peppers",
+            "Lettuce", "Broccoli", "Cucumber", "Blueberries", "Strawberries", "Avocado", "Spinach",
+            "Lemons", "Garlic", "Sweetcorn", "Mushrooms", "Courgettes", "Oranges"
+        ],
+        "Meat & Fish": [
+            "Chicken Breast Fillets", "British Bacon", "Beef Mince", "Pork Sausages", "Gammon Steaks",
+            "Salmon Fillets", "Cod Fillets", "Ham Slices", "Lamb Chops", "Pork Medallions",
+            "Beef Burgers", "Chicken Thighs", "Prawns", "Meatballs", "Turkey Mince",
+            "Battered Fish Fillets", "Smoked Haddock", "Cooked Chicken Slices", "Duck Breast", "Pepperoni"
+        ],
+        "Frozen": [
+            "Stonebaked Margherita Pizza", "Oven Chips", "Vanilla Ice Cream", "Garden Peas",
+            "Fish Fingers", "Chicken Nuggets", "Garlic Bread", "Frozen Berries", "Ice Lollies",
+            "Lasagne", "Frozen Sweetcorn", "Vegetable Mix", "Frozen Yorkshire Puddings",
+            "Waffles", "Spinach", "Frozen Pizza Pepperoni", "Frozen Hash Browns", "Frozen Pastry",
+            "Ice Cream Cones", "Vegetarian Sausages"
+        ],
+        "Snacks": [
+            "Ready Salted Crisps", "Chocolate Bar", "Salted Peanuts", "Digestive Biscuits",
+            "Popcorn Sweet & Salty", "Tortilla Chips", "Chocolate Cookies", "Cereal Bars",
+            "Pretzels", "Rice Cakes", "Oaty Biscuits", "Nut Mix", "Salt & Vinegar Crisps",
+            "Caramel Wafers", "Protein Bar", "Chocolate Covered Nuts", "Fruit Bars", "Shortbread",
+            "Flapjack", "Mini Cheddars"
+        ],
+        "Beverages": [
+            "Orange Juice 1L", "Cola 2L", "Still Water 1.5L", "Sparkling Water 1L",
+            "Instant Coffee", "English Breakfast Tea", "Energy Drink", "Smoothie Mango",
+            "Apple Juice", "Diet Cola", "Tonic Water", "Lemonade", "Hot Chocolate", "Iced Coffee",
+            "Herbal Tea", "Sports Drink", "Coconut Water", "Sugar Free Energy Drink", "Sparkling Apple Juice", "Spring Water 6x500ml"
+        ],
+        "Household": [
+            "Toilet Roll 9pk", "Washing Powder", "Dishwasher Tablets", "Bin Bags 50L",
+            "Bleach", "Surface Cleaner", "Kitchen Roll", "Fabric Softener", "Washing Up Liquid",
+            "Multi Purpose Spray", "Laundry Capsules", "Glass Cleaner", "Air Freshener",
+            "Antibacterial Wipes", "Toilet Cleaner", "Paper Towels", "Scourers", "Clothes Pegs",
+            "Floor Cleaner", "Refuse Sacks"
+        ],
+        "Cupboard": [
+            "Pasta Fusilli", "Basmati Rice", "Tinned Tomatoes", "Baked Beans", "Tuna Chunks in Brine",
+            "Peanut Butter", "Jam Strawberry", "Cooking Oil", "Cereal Cornflakes", "Oats Porridge",
+            "Tomato Ketchup", "Mayonnaise", "Soy Sauce", "Curry Sauce Jar", "Chopped Garlic Jar",
+            "Honey Squeezy", "Brown Sauce", "Instant Noodles", "Pesto", "Chilli Flakes"
+        ]
+    }
+
+    brands = [
+        "Deluxe", "Crownfield", "Milbona", "Nixe", "Vitasia", "Batts", "Fin Carré",
+        "Formil", "Oaklands", "Bellarom", "W5", "Cien", "Freeway", "Erlan", "Rivercote"
+    ]
+
+    # ----------------------------
+    # BUILD PRODUCT LIST (safe sampling)
+    # ----------------------------
+    product_list = []
+    pid = 1
+    for cat, items in categories.items():
+        for item in items:
+            brand = random.choice(brands)
+            pack_size = random.choice([
+                "250g", "400g", "500g", "1kg", "2L", "4-pack", "6-pack", "1L", "12 rolls", "10 pcs", "750ml", "200g"
+            ])
+            price = round(np.random.uniform(0.5, 12.0), 2)
+            product_list.append([pid, item, brand, cat, pack_size, price])
+            pid += 1
+
+    max_products = min(200, len(product_list))
+    products_df = (
+        pd.DataFrame(product_list, columns=["product_id", "product_name", "brand", "category", "pack_size", "unit_price"])
+        .sample(max_products, random_state=42)
+        .reset_index(drop=True)
+    )
+    products_df["product_id"] = products_df.index + 1
+
+    print(f"📦 Number of products in catalog: {len(products_df)}")
+
+    products_df.to_csv("C:/Users/CalumBrown/OneDrive - Blend 360/Documents/Personal Development/scotland_products_catalog.csv", index=False)
+    print("✅ Saved product catalog: scotland_products_catalog.csv")
+
+    # ----------------------------
+    # TRANSACTION GENERATION
+    # ----------------------------
+    start_date = datetime(2024, 1, 1)
+    end_date = datetime(2025, 10, 31)
+    num_days = (end_date - start_date).days + 1
+
+    transactions = []
+    transaction_id = 1
+
+    print("⏳ Generating transactions... (this may take a few minutes)")
+
+    for region, stores in regions.items():
+        for store in stores:
+            for day_offset in tqdm(range(num_days), desc=f"{store}"):
+                date = start_date + timedelta(days=day_offset)
+                # Random transactions per day per store between 100 and 200
+                num_transactions = random.randint(100, 200)
+                for _ in range(num_transactions):
+                    customer_id = random.randint(1000, 9999)
+                    basket_id = f"{store[:4].upper()}-{transaction_id}"
+                    timestamp = date + timedelta(minutes=random.randint(8*60, 20*60))  # between 8am–8pm
+                    num_items = np.random.randint(1, min(9, len(products_df) + 1))
+                    basket_products = np.random.choice(products_df["product_id"], size=num_items, replace=False)
+                    for pid in basket_products:
+                        quantity = np.random.randint(1, 4)
+                        price = products_df.loc[products_df["product_id"] == pid, "unit_price"].values[0]
+                        line_total = round(price * quantity, 2)
+                        transactions.append([
+                            transaction_id, timestamp, region, store, customer_id, basket_id,
+                            pid, quantity, line_total, random.choice(["Card", "Cash"])
+                        ])
+                    transaction_id += 1
+
+    transactions_df = pd.DataFrame(transactions, columns=[
+        "transaction_id", "timestamp", "region", "store", "customer_id", "basket_id",
+        "product_id", "quantity", "line_total", "payment_type"
+    ])
+
+    transactions_df.to_csv("C:/Users/CalumBrown/OneDrive - Blend 360/Documents/Personal Development/scotland_store_sales_full.csv", index=False)
+    print("✅ Saved full transaction dataset: scotland_store_sales_full.csv")
+
+    print(f"📊 Generated {len(transactions_df):,} rows of transaction data.")

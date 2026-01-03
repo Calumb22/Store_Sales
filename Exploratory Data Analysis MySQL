@@ -1,0 +1,185 @@
+########################### Store Sales Data Exploration ##################################
+
+-- Looking at store revenue trends
+select store_name, month_name, sum(line_total) as revenue
+from sales_fact f
+join store_dim d
+on f.store_id =d.store_id
+join date_dim e
+on f.date_id = e.date_id
+where `year` = 2025 
+group by store_name, month_name, month_num
+order by store_name, month_num asc;
+
+-- Looking at product popularity by category first
+-- bakery is top for august but category totals are pretty similar in terms of total_sold
+-- all basically even at 11%
+
+with cte as
+(
+select category, sum(quantity) as total_sold 
+from sales_fact f
+join item_dim d
+on f.product_id = d.product_id
+join date_dim e
+on f.date_id = e.date_id
+where `year` = 2025 and `month_name` = 'August'
+group by category
+)
+
+select category, total_sold, round(total_sold / (sum(total_sold) over()) * 100, 2) as `percent of quantity sold`
+from cte
+order by `percent of quantity sold` desc;
+
+-- Looking at revenue aswell 
+-- Interesting to see that the leading categories for items sold arent the highest revenue categories - if anything it is the opposite.
+-- Important to understand from client what they want to see in future analysis. High selling items could be increased in price to incrrease revenue
+
+with cte as 
+(
+select category, sum(quantity) as total_sold, rank() over(order by sum(quantity) desc) as quantity_rank
+from sales_fact f
+join item_dim d
+on f.product_id = d.product_id
+join date_dim e
+on f.date_id = e.date_id
+where `year` = 2025 and `month_name` = 'August'
+group by category
+),
+cte2 as 
+(select category, sum(line_total) as total_revenue, rank() over(order by sum(line_total) desc) as revenue_rank
+from sales_fact f
+join item_dim d
+on f.product_id = d.product_id
+join date_dim e
+on f.date_id = e.date_id
+where `year` = 2025 and `month_name` = 'August'
+group by category
+)
+
+select f.category, total_sold, total_revenue, quantity_rank, revenue_rank
+from cte f
+join cte2 d
+on f.category = d.category
+order by quantity_rank asc;
+
+-- Looking at specific products
+-- interesting to see leading products in terms of quantity sold - could be suggested to client to increase price of these to increase total revenue
+with cte as 
+(
+select product_name, sum(quantity) as total_sold, rank() over(order by sum(quantity) desc) as quantity_rank
+from sales_fact f
+join item_dim d
+on f.product_id = d.product_id
+join date_dim e
+on f.date_id = e.date_id
+where `year` = 2025 and `month_name` = 'August'
+group by product_name
+),
+cte2 as 
+(select product_name, sum(line_total) as total_revenue, rank() over(order by sum(line_total) desc) as revenue_rank
+from sales_fact f
+join item_dim d
+on f.product_id = d.product_id
+join date_dim e
+on f.date_id = e.date_id
+where `year` = 2025 and `month_name` = 'August'
+group by product_name
+)
+
+select f.product_name, total_sold, total_revenue, quantity_rank, revenue_rank
+from cte f
+join cte2 d
+on f.product_name = d.product_name
+order by quantity_rank asc;
+
+-- Looking at customer trends / footfall analysis 
+-- footfall quite consistent through the day
+-- bit of a peak at lunchtime
+-- opening hours ovbiously 8am - 8pm
+
+select hour, count(distinct(transaction_id)) as total_customers            -- counts number of transactions in each hour as distinct
+from sales_fact f
+join time_dim d 
+on f.time_id = d.time_id
+join date_dim e 
+on f.date_id = e.date_id 
+where `year` = 2025 and month_name = 'October' 
+group by `hour`
+order by `hour` asc;
+
+-- rolling total practise 
+with cte as 
+(
+select hour, count(distinct(transaction_id)) as total_customers           -- counts number of transactions in each hour as distinct
+from sales_fact f
+join time_dim d 
+on f.time_id = d.time_id
+join date_dim e 
+on f.date_id = e.date_id 
+where `year` = 2025 and month_name = 'October' 
+group by `hour`
+)
+
+select hour, total_customers, sum(total_customers) over(order by `hour`) as rolling_customer_total
+from cte 
+order by 'hour';
+
+
+select count(distinct(customer_id))
+from sales_fact;
+
+select max(transaction_id)
+from sales_fact;
+
+-- Looking to see new customers 
+-- no new customers in october
+-- Think because autogenerator so randomised its always showing 0
+-- Might need to update in python script
+select count(distinct(customer_id))
+from sales_fact f
+join date_dim d
+on f.date_id = d.date_id
+where `year` = 2025 and month_name = 'October' and customer_id not in
+(select distinct customer_id 
+from sales_fact f
+join date_dim d 
+on f.date_id = d.date_id
+where date not between '2025-10-01' and '2025-10-31');
+
+select count(distinct(customer_id))
+from sales_fact f
+join date_dim d
+on f.date_id = d.date_id
+where `year` = 2025 and customer_id not in
+(select distinct customer_id 
+from sales_fact f
+join date_dim d 
+on f.date_id = d.date_id
+where `year` = 2024);
+
+-- Below shows code is correct at least 
+select count(distinct(customer_id))
+from sales_fact f
+join date_dim d
+on f.date_id = d.date_id
+where `year` = 2025 and customer_id not in
+(select distinct customer_id 
+from sales_fact f
+join date_dim d 
+on f.date_id = d.date_id
+where `date` = '2024-01-01');
+
+
+-- changed python script for November batch upload 
+-- 743 new customers - quite extreme but will even out now - good to see code works
+select count(distinct(customer_id))
+from sales_fact f
+join date_dim d
+on f.date_id = d.date_id
+where `year` = 2025 and month_name = 'November' and customer_id not in
+(select distinct customer_id 
+from sales_fact f
+join date_dim d 
+on f.date_id = d.date_id
+where `date` < '2025-11-01');

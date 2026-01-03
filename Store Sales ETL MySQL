@@ -1,0 +1,114 @@
+################# Store Sales ETL ###############
+
+
+-- Run this script to update store sales database with new information
+-- CUrrent date dimension table created up to 31/12/2026
+
+set global local_infile=on;
+
+create table staging_table 
+(transaction_id varchar(100),
+`timestamp` varchar (250),
+region varchar (100),
+store varchar (100),
+customer_id varchar (100),
+basket_id varchar (100),
+product_id varchar (100),
+quantity int,
+line_total varchar (100),
+payment_type varchar (100)
+);
+
+load data local infile 'C:/Users/CalumBrown/OneDrive - Blend 360/Documents/Personal Development/Store Sales/scotland_store_sales_staging_table.csv' into table staging_table
+fields terminated by ','
+enclosed by '"'
+lines terminated by '\r\n'
+ignore 1 lines;
+
+update staging_table
+set store = replace(store, 'Lidl', '');
+
+alter table staging_table
+modify column customer_id int;
+
+alter table staging_table 
+drop column basket_id;
+
+alter table staging_table
+modify column transaction_id int;
+
+alter table staging_table
+modify column product_id int,
+modify column quantity int;
+
+alter table staging_table
+modify column line_total numeric(15,2);
+
+alter table staging_table
+add column `date` varchar (250);
+
+update staging_table 
+set `date` = substring_index(`timestamp`, ' ', 1);  
+
+update staging_table 
+set `timestamp` = substring_index(`timestamp`, ' ', -1);  
+
+alter table staging_table 
+modify column `date` date,
+modify column `timestamp` time;
+
+
+create index stagedate on staging_table(`date`);
+
+create index stagetime on staging_table(`timestamp`);
+
+create index stagestore on staging_table(store);
+
+alter table staging_table 
+add column store_id int,
+add column date_id int,
+add column time_id int;
+
+update staging_table f
+join store_dim d
+on f.store = d.store_name
+set f.store_id = d.store_id;
+
+update staging_table f
+join date_dim d
+on f.`date` = d.`date`
+set f.date_id = d.date_id;
+
+update staging_table f
+join time_dim d
+on f.`timestamp` = d.`timestamp`
+set f.time_id = d.time_id;
+
+alter table staging_table 
+drop column `timestamp`,
+drop column region,
+drop column store,
+drop column `date`;
+
+insert into sales_fact (transaction_id,
+customer_id,
+product_id,
+quantity,
+line_total,
+payment_type,
+store_id,
+date_id,
+time_id
+)
+select transaction_id,
+customer_id,
+product_id,
+quantity,
+line_total,
+payment_type,
+store_id,
+date_id,
+time_id 
+from staging_table;
+
+drop table staging_table;

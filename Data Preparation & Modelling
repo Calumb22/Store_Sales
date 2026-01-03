@@ -1,0 +1,336 @@
+############### Store Sales Data Preparation #################
+
+-- Importing data 
+
+set global local_infile=on;
+
+
+create table store_sales 
+(transaction_id varchar(100),
+`timestamp` varchar (250),
+region varchar (100),
+store varchar (100),
+customer_id varchar (100),
+basket_id varchar (100),
+product_id varchar (100),
+quantity int,
+line_total varchar (100),
+payment_type varchar (100)
+);
+
+load data local infile 'C:/Users/CalumBrown/OneDrive - Blend 360/Documents/Personal Development/Store Sales/scotland_store_sales_full.csv' into table store_sales
+fields terminated by ','
+enclosed by '"'
+lines terminated by '\r\n'
+ignore 1 lines;
+
+create table product_dim 
+(product_id int,
+product_name varchar(100),
+brand varchar (100),
+category varchar (100),
+pack_size varchar (100),
+unit_price varchar (100)
+);
+
+load data local infile 'C:/Users/CalumBrown/OneDrive - Blend 360/Documents/Personal Development/Store Sales/scotland_products_catalog.csv' into table product_dim
+fields terminated by ','
+enclosed by '"'
+lines terminated by '\r\n'
+ignore 1 lines;
+
+
+select * 
+from store_sales;
+
+select distinct basket_id
+from store_sales
+order by basket_id;
+
+-- Data Cleaning 
+
+-- creating copy of both tables to work with 
+
+create table sales_fact 
+like store_sales;
+
+insert into sales_fact
+select *
+from store_sales;
+
+create table item_dim
+like product_dim;
+
+insert into item_dim
+select * 
+from product_dim;
+
+
+select * 
+from sales_fact;
+
+select distinct transaction_id
+from sales_fact
+order by transaction_id;
+
+select * 
+from sales_fact 
+where `timestamp` like '2025-01-02%';
+
+-- Transaction_id and basket_id are the same thing really - each transaction has a number and however many items in that basket
+-- Do we want both? Do i want an id per line? 
+-- basket_id always equals transaction id 
+
+
+-- Checking for duplicates using timestamp and customer_id and product_id and quantity as should be unique 
+
+
+-- Going to leave in transaction_id as unique identifier for each basket 
+-- How will this work with adding in new data? - will come to this 
+
+-- 4 different regions all look okay 
+select distinct region 
+from sales_fact 
+order by region;
+
+update sales_fact 
+set region = trim(region);
+
+-- 16 different stores all with unique names
+select distinct store
+from sales_fact 
+order by store;
+
+update sales_fact 
+set store = trim(store);
+
+update sales_fact
+set store = replace(store, 'Lidl', '');
+
+select distinct customer_id 
+from sales_fact 
+order by customer_id;
+
+-- make cutsomer_id numeric data type
+alter table sales_fact
+modify column customer_id int;
+
+-- dropping basket_id
+alter table sales_fact 
+drop column basket_id;
+
+-- Make transaction_id numeric data type
+alter table sales_fact
+modify column transaction_id int;
+
+-- Same with quanity and product_id 
+alter table sales_fact
+modify column product_id int,
+modify column quantity int;
+
+-- line_total numeric data type with 2 decimal points as currency 
+
+alter table sales_fact 
+modify column line_total numeric(15,2);
+
+-- going to seperate out date and time 
+
+alter table sales_fact
+add column `date` varchar (250);
+
+update sales_fact 
+set `date` = substring_index(`timestamp`, ' ', 1);  -- takes before first space as delimter
+
+update sales_fact 
+set `timestamp` = substring_index(`timestamp`, ' ', -1);  -- takes after first space as delimter
+
+-- changing data types of date and time 
+-- Would use timestamp if kept together but will just use date and time
+-- Both in correct format so should be fine 
+
+alter table sales_fact 
+modify column `date` date,
+modify column `timestamp` time;
+
+-- Moving on to checking product dimension table 
+
+select * 
+from item_dim;
+
+-- All looks fine just need to change data type of unit price 
+
+alter table item_dim
+modify column unit_price numeric(15,2);
+
+
+
+############################### Data Modelling ###############################
+
+
+-- Store Dimension Table
+
+create table store_dim
+(
+store_id int auto_increment primary key,
+store_name varchar (100),
+region varchar (100)
+);
+
+
+insert into store_dim (store_name, region)
+select distinct store, region
+from sales_fact;
+
+-- Date Dimension Table 
+
+-- use recursive statement to populate future dates
+-- Optimal way to create date dim as no garuantee there is sales for every day so using select distinct not bulletproof
+
+CREATE TABLE date_dim AS
+WITH RECURSIVE dates AS (
+    SELECT DATE('2024-01-01') AS `date`
+    UNION ALL
+    SELECT DATE_ADD(`date`, INTERVAL 1 DAY)
+    FROM dates
+    WHERE `date` < '2026-12-31'
+)
+SELECT
+    `date`
+    from dates;
+    
+    
+alter table date_dim
+add column date_id int auto_increment primary key,
+add column `year` int,
+add column month_name varchar (20),
+add column month_num int,
+add column month_short varchar (10),
+add column week_num int,
+add column day_name varchar (25),
+add column day_of_month int,
+add column day_of_week int;
+
+update date_dim
+set `year` = year(`date`);
+
+update date_dim
+set month_name = monthname(`date`);
+
+update date_dim
+set month_num = month(`date`);
+
+update date_dim
+set week_num = weekofyear(`date`);
+
+update date_dim
+set day_name = dayname(`date`);
+
+update date_dim
+set day_of_month = dayofmonth(`date`);
+
+update date_dim
+set day_of_week = weekday(`date`) + 1;  -- starts as 1 on Monday 
+
+update date_dim
+set month_short = left(month_name, 3);
+    
+-- Time dimension table
+
+SET @@cte_max_recursion_depth = 2000;  -- set recursive limit > 1400 rows in time table
+
+CREATE TABLE time_dim AS
+WITH RECURSIVE minutes AS (
+    SELECT 0 AS minute_of_day
+    UNION ALL
+    SELECT minute_of_day + 1
+    FROM minutes
+    WHERE minute_of_day < 1439  -- 24 * 60 - 1
+)
+SELECT
+    LPAD(FLOOR(minute_of_day / 60), 2, '0') AS `hour`,
+    LPAD(MOD(minute_of_day, 60), 2, '0') AS `minute`,
+    SEC_TO_TIME(minute_of_day * 60) AS `timestamp`,
+    minute_of_day AS time_id
+FROM minutes
+ORDER BY time_id;
+
+-- add primary key to time dimension table
+alter table time_dim
+add primary key (time_id);
+
+alter table time_dim
+modify column time_id int;
+
+-- Merging tables together
+
+-- create index's on join columns
+
+create index dimdate on date_dim(`date`);
+create index factdate on sales_fact(`date`);
+
+create index dimtime on time_dim(`timestamp`);
+create index facttime on sales_fact(`timestamp`);
+
+create index dimstore on store_dim(store_name);
+create index factstore on sales_fact(store);
+
+-- already have product key done so just need to make primary / fk's
+alter table item_dim
+add primary key (product_id);
+
+
+-- add foreign key columns to fact table
+
+alter table sales_fact 
+add column store_id int,
+add column date_id int,
+add column time_id int;
+
+-- joining tables
+
+update sales_fact f
+join store_dim d
+on f.store = d.store_name
+set f.store_id = d.store_id;
+
+update sales_fact f
+join date_dim d
+on f.`date` = d.`date`
+set f.date_id = d.date_id;
+
+update sales_fact f
+join time_dim d
+on f.`timestamp` = d.`timestamp`
+set f.time_id = d.time_id;
+
+alter table sales_fact 
+drop column `timestamp`,
+drop column region,
+drop column store,
+drop column `date`;
+
+alter table sales_fact 
+add constraint storefk
+foreign key (store_id) references store_dim(store_id)
+on delete restrict 
+on update cascade;
+
+alter table sales_fact 
+add constraint itemfk
+foreign key (product_id) references item_dim(product_id)
+on delete restrict 
+on update cascade;
+
+alter table sales_fact 
+add constraint datefk
+foreign key (date_id) references date_dim(date_id)
+on delete restrict 
+on update cascade;
+
+alter table sales_fact 
+add constraint timefk
+foreign key (time_id) references time_dim(time_id)
+on delete restrict 
+on update cascade;
+
+########## Data Model ready for further analysis 

@@ -1,0 +1,82 @@
+# %%
+import pandas as pd
+import numpy as np
+import random
+from datetime import datetime, timedelta
+from tqdm import tqdm
+
+# --------------------------------------------------
+# CONFIGURATION
+# --------------------------------------------------
+#np.random.seed(42)
+#random.seed(42)
+
+# File paths
+products_file = "C:/Users/CalumBrown/OneDrive - Blend 360/Documents/Personal Development/Store Sales/scotland_products_catalog.csv"
+output_file = "C:/Users/CalumBrown/OneDrive - Blend 360/Documents/Personal Development/Store Sales/scotland_store_sales_staging_table.csv"
+
+# Manually set the starting transaction_id (update as needed)
+transaction_id = 2080000 # -- add 3500 per day 
+
+# Date range
+start_date = datetime(2025, 12, 13)
+end_date = datetime.now()  # current day
+num_days = (end_date.date() - start_date.date()).days + 1
+
+# Regions & stores
+regions = {
+    "Glasgow": ["Lidl Glasgow Central", "Lidl Partick", "Lidl Shawlands", "Lidl Govan"],
+    "Edinburgh": ["Lidl Leith", "Lidl Corstorphine", "Lidl Morningside", "Lidl Granton"],
+    "Aberdeen": ["Lidl Bridge of Don", "Lidl Torry", "Lidl Dyce", "Lidl Cults"],
+    "Inverness": ["Lidl Inshes", "Lidl Westhill", "Lidl Balloch", "Lidl Merkinch"]
+}
+
+# --------------------------------------------------
+# LOAD EXISTING PRODUCT CATALOG
+# --------------------------------------------------
+print("📦 Loading product catalog...")
+products_df = pd.read_csv(products_file)
+print(f"✅ Loaded {len(products_df)} products.")
+
+# --------------------------------------------------
+# GENERATE TRANSACTIONS
+# --------------------------------------------------
+transactions = []
+print(f"⏳ Generating transactions from {start_date.date()} to {end_date.date()}...")
+
+for region, stores in regions.items():
+    for store in stores:
+        for day_offset in tqdm(range(num_days), desc=f"{store}"):
+            date = start_date + timedelta(days=day_offset)
+            # Random transactions per day per store between 100 and 200
+            num_transactions = random.randint(100, 200)
+            for _ in range(num_transactions):
+                customer_id = random.randint(1000, 30000) ## update this every few weeks
+                basket_id = f"{store[:4].upper()}-{transaction_id}"
+                timestamp = date + timedelta(minutes=random.randint(8*60, 20*60))  # between 8am–8pm
+                num_items = np.random.randint(1, min(9, len(products_df) + 1))
+                basket_products = np.random.choice(products_df["product_id"], size=num_items, replace=False)
+                for pid in basket_products:
+                    quantity = np.random.randint(1, 4)
+                    price = products_df.loc[products_df["product_id"] == pid, "unit_price"].values[0]
+                    line_total = round(price * quantity, 2)
+                    transactions.append([
+                        transaction_id, timestamp, region, store, customer_id, basket_id,
+                        pid, quantity, line_total, random.choice(["Card", "Cash"])
+                    ])
+                transaction_id += 1
+
+# --------------------------------------------------
+# SAVE NEW DATASET
+# --------------------------------------------------
+transactions_df = pd.DataFrame(transactions, columns=[
+    "transaction_id", "timestamp", "region", "store", "customer_id", "basket_id",
+    "product_id", "quantity", "line_total", "payment_type"
+])
+
+transactions_df.to_csv(output_file, index=False)
+print(f"✅ Saved new transaction dataset: {output_file}")
+print(f"📊 Generated {len(transactions_df):,} rows.")
+print(f"➡️ Last transaction_id used: {transaction_id - 1}")
+
+
